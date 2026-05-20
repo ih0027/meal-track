@@ -1,15 +1,17 @@
 from ingredient import Ingredient, NutritionalInfo
-from backend.units import Volume
+from units import Volume
 
 class Recipe:
     """A class to represent a single recipe"""
     def __init__(
         self,
+        id: int,
         name: str,
         ingredients: list[Ingredient],
         amounts: dict[int, float | Volume],
         steps: list[str],
     ):
+        self.id = id
         self.name = name
         self.ingredients = ingredients
         self.amounts = amounts
@@ -17,4 +19,8 @@ class Recipe:
         info = NutritionalInfo(0,0,0,0,0,0,0,0,0,0,0,0,0,0)
         for i in ingredients:
             info += i.getNutritionalInfoForAmount(amounts[i.id])
+        self.nutritionalInfo = info
+    def updateNutritionalInfo(self):
+        for i in self.ingredients:
+            info += i.getNutritionalInfoForAmount(self.amounts[i.id])
         self.nutritionalInfo = info
