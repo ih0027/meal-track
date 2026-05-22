@@ -1,7 +1,9 @@
 import sqlite3
 from ingredient import Ingredient, NutritionalInfo
 from recipe import Recipe
+import units
 import json
+import numbers
 
 
 class Database:
@@ -40,6 +42,7 @@ class Database:
             recipeId INTEGER NOT NULL,
             ingredientId INTEGER NOT NULL,
             amount REAL NOT NULL,
+            amountUnit TEXT,
             
             PRIMARY KEY (recipeId, ingredientId),
             FOREIGN KEY (recipeId) REFERENCES recipes(id) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -163,10 +166,24 @@ class Database:
                     """INSERT INTO ingredientsToRecipe(
                     recipeId,
                     ingredientId,
-                    amount
+                    amount,
+                    amountUnit
                     )
-                    VALUES(?, ?, ?)""",
-                    (recipe.id, i.id, recipe.amounts[i.id]),
+                    VALUES(?, ?, ?, ?)""",
+                    (
+                        recipe.id,
+                        i.id,
+                        (
+                            recipe.amounts[i.id]
+                            if isinstance(recipe.amounts[i.id], numbers.Real)
+                            else recipe.amounts[i.id].getInInitialUnits()
+                        ),
+                        (
+                            None
+                            if isinstance(recipe.amounts[i.id], numbers.Real)
+                            else recipe.amounts[i.id].initialUnit.name
+                        ),
+                    ),
                 )
             self.con.commit()
         except Exception:
@@ -222,13 +239,17 @@ class Database:
         cur.execute("""SELECT id, name, steps FROM recipes WHERE id = ?""", (id,))
         data = cur.fetchone()
         cur.execute(
-            """SELECT ingredientId, amount FROM ingredientsToRecipe WHERE recipeId = ?""",
-            (id,)
+            """SELECT ingredientId, amount, amountUnit FROM ingredientsToRecipe WHERE recipeId = ?""",
+            (id,),
         )
         ingredients = []
         amounts = {}
         for i in cur.fetchall():
-            amounts[i[0]] = i[1]
+            unit = units.VolumeUnits.getFromString(i[2])
+            if unit is None:
+                amounts[i[0]] = i[1]
+            else:
+                amounts[i[0]] = units.Volume(i[1], unit)
             ingredients.append(self.getIngredient(i[0]))
         recipe = Recipe(id, data[1], ingredients, amounts, json.loads(data[2]))
         return recipe
