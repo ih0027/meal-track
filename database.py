@@ -54,7 +54,8 @@ class Database:
     def addIngredient(self, ingredient: Ingredient):
         """Adds an ingredient to the database or updates an existing ingredient
         - Ingredients that do not currently exist should have an id of None"""
-        cur = self.con.cursor()
+        con = self._getConnection()
+        cur = con.cursor()
         if ingredient.id is None:
             cur.execute(
                 """
@@ -146,56 +147,107 @@ class Database:
                     ingredient.id,
                 ),
             )
-        self.con.commit()
+        con.commit()
+        con.close()
 
     def addRecipe(self, recipe: Recipe):
-        cur = self.con.cursor()
-        try:
-            cur.execute(
-                """INSERT INTO recipes (
-                name,
-                steps
-                )
-                VALUES(?, ?)""",
-                (recipe.name, json.dumps(recipe.steps)),
-            )
-            recipe.id = cur.lastrowid
-
-            for i in recipe.ingredients:
+        con = self._getConnection()
+        cur = con.cursor()
+        if recipe.id is None:
+            try:
                 cur.execute(
-                    """INSERT INTO ingredientsToRecipe(
-                    recipeId,
-                    ingredientId,
-                    amount,
-                    amountUnit
+                    """INSERT INTO recipes (
+                    name,
+                    steps
                     )
-                    VALUES(?, ?, ?, ?)""",
-                    (
-                        recipe.id,
-                        i.id,
-                        (
-                            recipe.amounts[i.id]
-                            if isinstance(recipe.amounts[i.id], numbers.Real)
-                            else recipe.amounts[i.id].getInInitialUnits()
-                        ),
-                        (
-                            None
-                            if isinstance(recipe.amounts[i.id], numbers.Real)
-                            else recipe.amounts[i.id].initialUnit.name
-                        ),
-                    ),
+                    VALUES(?, ?)""",
+                    (recipe.name, json.dumps(recipe.steps)),
                 )
-            self.con.commit()
-        except Exception:
-            self.con.rollback()
-            raise
+                recipe.id = cur.lastrowid
+
+                for i in recipe.ingredients:
+                    cur.execute(
+                        """INSERT INTO ingredientsToRecipe(
+                        recipeId,
+                        ingredientId,
+                        amount,
+                        amountUnit
+                        )
+                        VALUES(?, ?, ?, ?)""",
+                        (
+                            recipe.id,
+                            i.id,
+                            (
+                                recipe.amounts[i.id]
+                                if isinstance(recipe.amounts[i.id], numbers.Real)
+                                else recipe.amounts[i.id].getInInitialUnits()
+                            ),
+                            (
+                                None
+                                if isinstance(recipe.amounts[i.id], numbers.Real)
+                                else recipe.amounts[i.id].initialUnit.name
+                            ),
+                        ),
+                    )
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
+        else:
+            try:
+                cur.execute(
+                    """
+                            UPDATE recipes
+                            SET name = ?,
+                            steps = ?
+                        WHERE id = ?
+                            """,
+                    (recipe.name, json.dumps(recipe.steps), recipe.id),
+                )
+                if cur.rowcount == 0:
+                    raise ValueError(f"Recipe id {recipe.id} does not exist")
+                cur.execute(
+                    """DELETE FROM ingredientsToRecipe WHERE recipeId = ?""",
+                    (recipe.id,),
+                )
+                for i in recipe.ingredients:
+                    cur.execute(
+                        """INSERT INTO ingredientsToRecipe(
+                        recipeId,
+                        ingredientId,
+                        amount,
+                        amountUnit
+                        )
+                        VALUES(?, ?, ?, ?)""",
+                        (
+                            recipe.id,
+                            i.id,
+                            (
+                                recipe.amounts[i.id]
+                                if isinstance(recipe.amounts[i.id], numbers.Real)
+                                else recipe.amounts[i.id].getInInitialUnits()
+                            ),
+                            (
+                                None
+                                if isinstance(recipe.amounts[i.id], numbers.Real)
+                                else recipe.amounts[i.id].initialUnit.name
+                            ),
+                        ),
+                    )
+                con.commit()
+            except Exception:
+                con.rollback()
+                raise
+        con.close()
 
     def getAllIngredients(self) -> list[tuple[int, str]]:
-        cur = self.con.cursor()
+        con = self._getConnection()
+        cur = con.cursor()
         return list(cur.execute("SELECT id, name FROM ingredients"))
 
     def getIngredient(self, id: int) -> Ingredient:
-        cur = self.con.cursor()
+        con = self._getConnection()
+        cur = con.cursor()
         cur.execute(
             """SELECT id, name, servingArbitrary, mLPerGram,
                calories, fat, transfat, cholesterol,
@@ -231,11 +283,13 @@ class Database:
         )
 
     def getAllRecipes(self) -> list[tuple[int, str]]:
-        cur = self.con.cursor()
+        con = self._getConnection()
+        cur = con.cursor()
         return list(cur.execute("SELECT id, name FROM recipes"))
 
     def getRecipe(self, id: int) -> Recipe:
-        cur = self.con.cursor()
+        con = self._getConnection()
+        cur = con.cursor()
         cur.execute("""SELECT id, name, steps FROM recipes WHERE id = ?""", (id,))
         data = cur.fetchone()
         cur.execute(
@@ -253,3 +307,38 @@ class Database:
             ingredients.append(self.getIngredient(i[0]))
         recipe = Recipe(id, data[1], ingredients, amounts, json.loads(data[2]))
         return recipe
+
+    def deleteRecipe(self, id: int):
+        con = self._getConnection()
+        cur = con.cursor()
+        try:
+            cur.execute("""DELETE FROM recipes WHERE id = ?""", (id,))
+            con.commit()
+            con.close()
+        except:
+            con.rollback()
+            raise
+
+    def deleteIngredient(self, id: int):
+        """
+        Delete an ingredient.
+
+        Returns:
+            True if deleted successfully.
+            False if deletion is blocked by constraints
+            (e.g. ingredient is used in a recipe).
+        """
+        con = self._getConnection()
+        cur = con.cursor()
+        try:
+            cur.execute("DELETE FROM ingredients WHERE id = ?", (id,))
+            con.commit()
+            return True
+        except sqlite3.IntegrityError:
+            con.rollback()
+            return False
+        finally:
+            con.close()
+
+    def _getConnection(self):
+        return sqlite3.connect("database.db")

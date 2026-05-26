@@ -2,7 +2,6 @@ import units as units
 import dataclasses
 import numbers
 
-
 @dataclasses.dataclass
 class NutritionalInfo:
     """A class to represent the complete nutritional info of an ingredient or recipe"""
@@ -61,6 +60,7 @@ class Ingredient:
         self.servingArbitrary = servingArbitrary
         if servingArbitrary:
             self.nutritionalInfo = nutritionalInfo
+            self.mLPerGram = None
         else:
             self.mLPerGram = servingVolume.get() / servingGrams
             self.nutritionalInfo = self._normalizeNutritionalInfo(
@@ -96,3 +96,12 @@ class Ingredient:
                 for attr, value in vars(self.nutritionalInfo).items()
             }
         return NutritionalInfo(**info)
+
+    def toDict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "servingArbitrary": self.servingArbitrary,
+            "mLPerGram": self.mLPerGram,
+            "nutritionalInfo": vars(self.nutritionalInfo),
+        }
