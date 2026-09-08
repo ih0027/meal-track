@@ -209,7 +209,3 @@ The application models nutrition data around two primary entities: ingredients a
   ]
 }
 ```
-
-## Database
-
-SQLite is used for local persistence. The database file is created automatically as `database.db` in the project root when the app starts.
